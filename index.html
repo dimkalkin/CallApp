@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WebRTC Phone</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        #loginScreen, #callScreen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        #callScreen { display: none; }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            margin-bottom: 15px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.3s;
+        }
+        
+        button:active { transform: scale(0.98); }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            margin-bottom: 10px;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .call-controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .control-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .control-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .status {
+            text-align: center;
+            color: white;
+            font-size: 18px;
+            margin-bottom: 20px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .timer {
+            font-size: 48px;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        #remoteAudio { display: none; }
+        
+        .speaker-toggle {
+            background: #f39c12 !important;
+        }
+        
+        .speaker-toggle.active {
+            background: #27ae60 !important;
+        }
+        
+        .incoming-call {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .incoming-card {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            animation: slideUp 0.3s;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .caller-id {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .call-buttons {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .btn-accept {
+            background: #27ae60;
+            color: white;
+            flex: 1;
+        }
+        
+        .btn-reject {
+            background: #e74c3c;
+            color: white;
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Экран входа -->
+    <div id="loginScreen">
+        <div class="container">
+            <h1>📞 WebRTC Phone</h1>
+            <p class="subtitle">Звонки через интернет</p>
+            <input type="text" id="username" placeholder="Введите ваш ID" maxlength="20">
+            <input type="text" id="roomId" placeholder="ID комнаты (или оставьте пустым)" maxlength="20">
+            <button class="btn-primary" onclick="joinRoom()">Подключиться</button>
+            <p style="text-align: center; margin-top: 15px; color: #999; font-size: 12px;">
+                Сервер: <span id="serverStatus">🔴 Offline</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Экран звонка -->
+    <div id="callScreen">
+        <div class="timer" id="timer">00:00</div>
+        <div class="status" id="status">Ожидание...</div>
+        
+        <div class="call-controls">
+            <button class="control-btn" id="muteBtn" onclick="toggleMute()" title="Микрофон">🎤</button>
+            <button class="control-btn speaker-toggle" id="speakerBtn" onclick="toggleSpeaker()" title="Динамик">🔊</button>
+            <button class="control-btn btn-danger" onclick="endCall()" title="Завершить">📞</button>
+        </div>
+        
+        <audio id="remoteAudio" autoplay playsinline></audio>
+        <audio id="localAudio" muted autoplay playsinline></audio>
+    </div>
+
+    <!-- Входящий звонок -->
+    <div class="incoming-call" id="incomingCall">
+        <div class="incoming-card">
+            <div class="caller-id" id="callerId">Unknown</div>
+            <p style="margin-bottom: 20px; color: #666;">Входящий звонок</p>
+            <div class="call-buttons">
+                <button class="btn-accept" onclick="acceptCall()">Принять</button>
+                <button class="btn-reject" onclick="rejectCall()">Сбросить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const socket = io('wss://webrtc-phone-server.onrender.com'); // Замени на свой сервер
+        
+        let localStream;
+        let remoteStream;
+        let peerConnection;
+        let currentRoom;
+        let isCaller = false;
+        let callStartTime;
+        let timerInterval;
+        let isSpeakerOn = true; // По умолчанию громкая связь
+        
+        const servers = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // Проверка подключения
+        socket.on('connect', () => {
+            document.getElementById('serverStatus').textContent = '🟢 Online';
+            document.getElementById('serverStatus').style.color = '#27ae60';
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('serverStatus').textContent = '🔴 Offline';
+            document.getElementById('serverStatus').style.color = '#e74c3c';
+        });
+
+        async function joinRoom() {
+            const username = document.getElementById('username').value.trim();
+            let room = document.getElementById('roomId').value.trim();
+            
+            if (!username) {
+                alert('Введите ID!');
+                return;
+            }
+            
+            if (!room) {
+                room = 'room-' + Math.random().toString(36).substr(2, 9);
+                document.getElementById('roomId').value = room;
+            }
+            
+            currentRoom = room;
+            socket.emit('join', { room, username });
+            
+            // Получаем доступ к микрофону
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }, 
+                    video: false 
+                });
+                
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('callScreen').style.display = 'flex';
+                document.getElementById('status').textContent = 'В комнате: ' + room;
+                
+                // Автоматически включаем громкую связь
+                setTimeout(() => toggleSpeaker(true), 500);
+                
+            } catch (err) {
+                alert('Ошибка доступа к микрофону: ' + err.message);
+            }
+        }
+
+        // Обработка сигналинга
+        socket.on('user-joined', async ({ username, count }) => {
+            document.getElementById('status').textContent = `Пользователь ${username} в сети (${count})`;
+            
+            // Если в комнате 2 человека - начинаем звонок
+            if (count === 2 && !peerConnection) {
+                await startCall();
+            }
+        });
+
+        socket.on('offer', async ({ offer, from }) => {
+            if (!peerConnection) {
+                await createPeerConnection(false);
+            }
+            await peerConnection.setRemoteDescription(offer);
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', { room: currentRoom, answer });
+        });
+
+        socket.on('answer', async ({ answer }) => {
+            await peerConnection.setRemoteDescription(answer);
+        });
+
+        socket.on('ice-candidate', async ({ candidate }) => {
+            try {
+                await peerConnection.addIceCandidate(candidate);
+            } catch (e) {
+                console.error('Error adding ice candidate', e);
+            }
+        });
+
+        async function startCall() {
+            isCaller = true;
+            await createPeerConnection(true);
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('offer', { room: currentRoom, offer });
+            document.getElementById('status').textContent = 'Идет вызов...';
+        }
+
+        async function createPeerConnection(isInitiator) {
+            peerConnection = new RTCPeerConnection(servers);
+            
+            // Добавляем локальный трек
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            // Получаем удаленный трек
+            peerConnection.ontrack = (event) => {
+                const remoteAudio = document.getElementById('remoteAudio');
+                remoteAudio.srcObject = event.streams[0];
+                remoteStream = event.streams[0];
+                
+                document.getElementById('status').textContent = 'Разговор идет';
+                startTimer();
+                
+                // Устанавливаем громкость на максимум для громкой связи
+                remoteAudio.volume = 1.0;
+            };
+            
+            // ICE кандидаты
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', { 
+                        room: currentRoom, 
+                        candidate: event.candidate 
+                    });
+                }
+            };
+            
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection.connectionState === 'connected') {
+                    document.getElementById('status').textContent = 'Соединение установлено';
+                }
+            };
+        }
+
+        function toggleSpeaker(forceState = null) {
+            const btn = document.getElementById('speakerBtn');
+            const audio = document.getElementById('remoteAudio');
+            
+            isSpeakerOn = forceState !== null ? forceState : !isSpeakerOn;
+            
+            if (isSpeakerOn) {
+                btn.classList.add('active');
+                btn.innerHTML = '🔊';
+                // Громкая связь - максимальная громкость
+                audio.volume = 1.0;
+                
+                // Пытаемся переключить на внешний динамик (если поддерживается)
+                if (audio.setSinkId) {
+                    navigator.mediaDevices.enumerateDevices().then(devices => {
+                        const speaker = devices.find(d => d.kind === 'audiooutput' && d.label.includes('Speaker'));
+                        if (speaker) audio.setSinkId(speaker.deviceId);
+                    });
+                }
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '📞';
+                // Тихий режим (как трубка у уха)
+                audio.volume = 0.3;
+                
+                // Пытаемся переключить на наушник (если поддерживается)
+                if (audio.setSinkId) {
+                    navigator.mediaDevices.enumerateDevices().then(devices => {
+                        const earpiece = devices.find(d => d.kind === 'audiooutput' && d.label.includes('Earpiece'));
+                        if (earpiece) audio.setSinkId(earpiece.deviceId);
+                    });
+                }
+            }
+        }
+
+        function toggleMute() {
+            const btn = document.getElementById('muteBtn');
+            const audioTracks = localStream.getAudioTracks();
+            
+            audioTracks.forEach(track => {
+                track.enabled = !track.enabled;
+            });
+            
+            if (audioTracks[0].enabled) {
+                btn.classList.remove('active');
+                btn.innerHTML = '🎤';
+            } else {
+                btn.classList.add('active');
+                btn.innerHTML = '🚫';
+            }
+        }
+
+        function endCall() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            
+            stopTimer();
+            socket.emit('leave', { room: currentRoom });
+            
+            document.getElementById('callScreen').style.display = 'none';
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('timer').textContent = '00:00';
+        }
+
+        function startTimer() {
+            callStartTime = Date.now();
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+                const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const secs = (elapsed % 60).toString().padStart(2, '0');
+                document.getElementById('timer').textContent = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+
+        // Обработка кнопок громкости телефона
+        document.addEventListener('volumechange', (e) => {
+            // На некоторых телефонах это помогает синхронизировать
+            console.log('Volume changed');
+        });
+
+        // Предотвращаем блокировку экрана во время звонка
+        if ('wakeLock' in navigator) {
+            let wakeLock = null;
+            
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible' && peerConnection) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
